@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>地震波拾取算法性能动态榜单</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .up-good { color: #10b981; } /* 绿色 */
+        .up-bad { color: #ef4444; }  /* 红色 */
+        .delta { font-size: 0.7rem; margin-left: 2px; font-weight: bold; white-space: nowrap;}
+        [v-cloak] { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 p-4 md:p-10">
+    <div id="app" v-cloak class="max-w-7xl mx-auto">
+        <!-- 头部导航 -->
+        <div class="flex flex-col md:flex-row justify-between items-center mb-8">
+            <div>
+                <h1 class="text-2xl font-black text-slate-800">Phase Picking Leaderboard</h1>
+                <p class="text-sm text-slate-500">Comparing multiple datasets against photo benchmarks</p>
+            </div>
+            
+            <!-- 筛选器 -->
+            <div class="flex gap-4 mt-4 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+                <div class="flex items-center">
+                    <span class="text-xs font-bold mr-2 text-slate-400">PHASE</span>
+                    <select v-model="selectedPhase" class="text-sm font-bold text-blue-600 bg-blue-50 border-none rounded p-1">
+                        <option value="P">P-phase</option>
+                        <option value="S">S-phase</option>
+                    </select>
+                </div>
+                <div class="flex items-center border-l pl-4">
+                    <span class="text-xs font-bold mr-2 text-slate-400">THRESHOLD</span>
+                    <select v-model="selectedThreshold" class="text-sm font-bold text-blue-600 bg-blue-50 border-none rounded p-1">
+                        <option v-for="t in thresholds" :key="t" :value="t">{{ t.toFixed(2) }}</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 表格容器 -->
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
+            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                <thead class="bg-slate-800 text-white">
+                    <tr>
+                        <th class="px-4 py-4 font-bold text-center w-16">Rank</th>
+                        <th class="px-4 py-4 font-bold text-left">Test Datasets</th>
+                        <th v-for="m in metrics" :key="m" class="px-2 py-4 font-bold text-center uppercase text-[10px] tracking-wider">
+                            {{ m }}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                    <!-- 基准行 -->
+                    <tr class="bg-amber-50">
+                        <td class="px-4 py-3 text-center">🏆</td>
+                        <td class="px-4 py-3 font-bold text-amber-800">Best in Class (Photo)</td>
+                        <td v-for="m in metrics" :key="m" class="px-2 py-3 text-center font-mono font-bold text-slate-600">
+                            {{ benchmarks[selectedPhase][m] }}
+                        </td>
+                    </tr>
+
+                    <!-- 加载状态 -->
+                    <tr v-if="loading">
+                        <td :colspan="metrics.length + 2" class="py-10 text-center text-slate-400">Loading datasets...</td>
+                    </tr>
+
+                    <!-- 动态数据集结果 -->
+                    <tr v-for="(ds, idx) in processedResults" :key="ds.name" class="hover:bg-blue-50 transition-colors">
+                        <td class="px-4 py-4 text-center font-bold text-slate-300">#{{ idx + 1 }}</td>
+                        <td class="px-4 py-4 font-bold text-slate-700">{{ ds.name }}</td>
+                        <td v-for="m in metrics" :key="m" class="px-1 py-4 text-center">
+                            <div class="font-mono text-slate-800">{{ ds.values[m] ? ds.values[m].toFixed(4) : '-' }}</div>
+                            <!-- 差值计算 -->
+                            <div v-if="ds.values[m]" :class="getDeltaStyle(m, ds.values[m])" class="delta">
+                                {{ (ds.values[m] - benchmarks[selectedPhase][m]) >= 0 ? '+' : '-' }}{{ Math.abs(ds.values[m] - benchmarks[selectedPhase][m]).toFixed(4) }}
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    loading: true,
+                    selectedPhase: 'P',
+                    selectedThreshold: 0.10,
+                    metrics: ['Precision', 'Recall', 'F1', 'mu', 'sigma', 'MAE', 'RMSE', 'R2', 'IoU'],
+                    thresholds: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95],
+                    
+                    // 这里定义你想加载的数据集文件列表
+                    datasetConfigs: [
+                        { name: 'ETHZ Dataset', url: './data/ethz.json' },
+                        { name: 'PNW Dataset', url: './data/pnw.json' },
+                        { name: 'SCEDC Dataset', url: './data/scedc.json' }
+                        // 以后添加数据集，只需在这里加一行，例如：
+                        // { name: 'Iquique Dataset', url: './data/iquique.json' }
+                    ],
+                    
+                    benchmarks: { P: {}, S: {} },
+                    allData: [] // 存储加载完成的所有 JSON 数据
+                }
+            },
+            computed: {
+                // 根据当前选择过滤所有数据集的数据
+                processedResults() {
+                    return this.allData.map(ds => {
+                        const row = ds.content.find(d => 
+                            d.Phase === this.selectedPhase && 
+                            Math.abs(d.Threshold - this.selectedThreshold) < 0.001
+                        );
+                        return { name: ds.name, values: row || {} };
+                    });
+                }
+            },
+            methods: {
+                async init() {
+                    try {
+                        // 1. 加载基准数据
+                        const bRes = await fetch('./benchmarks.json');
+                        this.benchmarks = await bRes.json();
+
+                        // 2. 并行加载所有数据集
+                        const fetchPromises = this.datasetConfigs.map(async (cfg) => {
+                            const res = await fetch(cfg.url);
+                            const content = await res.json();
+                            return { name: cfg.name, content: content };
+                        });
+
+                        this.allData = await Promise.all(fetchPromises);
+                        this.loading = false;
+                    } catch (err) {
+                        console.error("加载数据失败:", err);
+                    }
+                },
+                getDeltaStyle(metric, value) {
+                    const bench = this.benchmarks[this.selectedPhase][metric];
+                    const diff = value - bench;
+                    const lowerIsBetter = ['mu', 'sigma', 'MAE', 'RMSE'];
+                    
+                    if (lowerIsBetter.includes(metric)) {
+                        // 特殊处理 mu: 离 0 越近越好 (比较绝对值)
+                        if (metric === 'mu') return Math.abs(value) <= Math.abs(bench) ? 'up-good' : 'up-bad';
+                        return diff <= 0 ? 'up-good' : 'up-bad';
+                    }
+                    return diff >= 0 ? 'up-good' : 'up-bad';
+                }
+            },
+            mounted() {
+                this.init();
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
