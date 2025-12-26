@@ -3,86 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phase Picking Leaderboard</title>
+    <title>Phase Picking Leaderboard - Pro</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .up-good { color: #10b981; } 
         .up-bad { color: #ef4444; }  
-        .delta { font-size: 0.7rem; margin-left: 2px; font-weight: bold; white-space: nowrap;}
+        .delta { font-size: 0.65rem; margin-left: 2px; font-weight: bold; white-space: nowrap; opacity: 0.8; }
+        .vs-delta { font-size: 0.65rem; color: #6366f1; font-weight: 800; }
         [v-cloak] { display: none; }
+        .winner-bg { background-color: #f5f3ff; border-left: 4px solid #6366f1 !important; }
+        .winner-crown { filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.5)); }
     </style>
 </head>
 <body class="bg-slate-50 p-4 md:p-10">
     <div id="app" v-cloak class="max-w-7xl mx-auto">
+        
         <!-- 头部导航 -->
         <div class="flex flex-col md:flex-row justify-between items-end mb-8 gap-4">
             <div>
-                <h1 class="text-2xl font-black text-slate-800 text-transparent bg-clip-text bg-gradient-to-r from-blue-700 to-indigo-500">Phase Picking Leaderboard</h1>
-                <p class="text-sm text-slate-500">Cross-Dataset Performance Comparison</p>
+                <h1 class="text-3xl font-black text-slate-800 text-transparent bg-clip-text bg-gradient-to-r from-blue-700 to-indigo-500">Phase Picking Leaderboard</h1>
+                <p class="text-sm text-slate-500 mt-1">Compare datasets: Select two rows to see Head-to-Head analysis.</p>
             </div>
             
-            <div class="flex flex-wrap gap-3 bg-white p-2 rounded-lg shadow-sm border border-slate-200">
+            <!-- 过滤器 -->
+            <div class="flex flex-wrap gap-3 bg-white p-2 rounded-xl shadow-sm border border-slate-200">
                 <div class="flex items-center px-2">
-                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase">Phase</span>
-                    <select v-model="selectedPhase" class="text-sm font-bold text-blue-600 bg-blue-50 rounded p-1 border-none focus:ring-2 focus:ring-blue-500">
+                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase tracking-tighter">Phase</span>
+                    <select v-model="selectedPhase" class="text-sm font-bold text-blue-600 bg-blue-50 rounded p-1 outline-none">
                         <option value="P">P-phase</option>
                         <option value="S">S-phase</option>
                     </select>
                 </div>
                 <div class="flex items-center px-2 border-l">
-                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase">Threshold</span>
-                    <select v-model="selectedThreshold" class="text-sm font-bold text-blue-600 bg-blue-50 rounded p-1 border-none focus:ring-2 focus:ring-blue-500">
+                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase tracking-tighter">Threshold</span>
+                    <select v-model="selectedThreshold" class="text-sm font-bold text-blue-600 bg-blue-50 rounded p-1 outline-none">
                         <option v-for="t in thresholds" :key="t" :value="t">{{ t.toFixed(2) }}</option>
                     </select>
                 </div>
                 <div class="flex items-center px-2 border-l">
-                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase">Benchmark</span>
-                    <select v-model="selectedBenchmarkName" class="text-sm font-bold text-amber-600 bg-amber-50 rounded p-1 border-none focus:ring-2 focus:ring-amber-500">
-                        <option value="Best">🥇 Best in Class (Auto)</option>
+                    <span class="text-xs font-bold mr-2 text-slate-400 uppercase tracking-tighter">Benchmark</span>
+                    <select v-model="selectedBenchmarkName" class="text-sm font-bold text-amber-600 bg-amber-50 rounded p-1 outline-none">
+                        <option value="Best">🥇 Best in Class</option>
                         <option v-for="(val, name) in benchmarkStore" :key="name" :value="name">{{ name }}</option>
                     </select>
                 </div>
             </div>
         </div>
 
-        <!-- 表格 -->
-        <div class="bg-white rounded-xl shadow-xl overflow-hidden border border-slate-200">
-            <table class="min-w-full divide-y divide-slate-200 text-sm">
-                <thead class="bg-slate-800 text-white">
-                    <tr>
-                        <th class="px-4 py-4 font-bold text-center w-16">Rank</th>
-                        <th class="px-4 py-4 font-bold text-left">Test Datasets</th>
-                        <th v-for="m in metrics" :key="m" class="px-2 py-4 font-bold text-center uppercase text-[10px] tracking-widest">{{ m }}</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200">
-                    <!-- 基准行 -->
-                    <tr class="bg-amber-50/50">
-                        <td class="px-4 py-3 text-center">🏆</td>
-                        <td class="px-4 py-3">
-                            <div class="font-bold text-amber-900">{{ selectedBenchmarkName === 'Best' ? 'Combined Best Metrics' : selectedBenchmarkName }}</div>
-                            <div class="text-[10px] text-amber-600 uppercase font-bold tracking-tighter">Reference Baseline</div>
-                        </td>
-                        <td v-for="m in metrics" :key="m" class="px-2 py-3 text-center font-mono font-bold text-slate-700">
-                            {{ formatVal(activeBenchmark[m]) }}
-                        </td>
-                    </tr>
+        <!-- 对比分析面板 (仅选中两个时显示) -->
+        <transition name="fade">
+            <div v-if="selectedCompare.length === 2" class="mb-6 p-5 bg-slate-900 text-white rounded-2xl shadow-2xl flex flex-col md:flex-row justify-between items-center border border-slate-700">
+                <div class="flex items-center gap-6 mb-4 md:mb-0">
+                    <div class="text-center">
+                        <div class="text-[10px] text-slate-400 uppercase font-bold mb-1">Model A</div>
+                        <div class="text-lg font-black text-blue-400">{{ selectedCompare[0].name }}</div>
+                    </div>
+                    <div class="text-2xl font-black italic text-slate-600">VS</div>
+                    <div class="text-center">
+                        <div class="text-[10px] text-slate-400 uppercase font-bold mb-1">Model B</div>
+                        <div class="text-lg font-black text-indigo-400">{{ selectedCompare[1].name }}</div>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-8">
+                    <div class="text-right border-r border-slate-700 pr-8">
+                        <span class="text-[10px] text-slate-400 uppercase font-bold block">Winner Summary</span>
+                        <span class="text-emerald-400 font-bold text-sm">
+                            {{ getWinnerConclusion() }}
+                        </span>
+                    </div>
+                    <button @click="selectedCompare = []" class="bg-slate-700 hover:bg-red-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+                        Reset PK
+                    </button>
+                </div>
+            </div>
+        </transition>
 
-                    <!-- 数据集结果 -->
-                    <tr v-for="(ds, idx) in processedResults" :key="ds.name" class="hover:bg-indigo-50/30 transition-colors">
-                        <td class="px-4 py-5 text-center font-bold text-slate-300">#{{ idx + 1 }}</td>
-                        <td class="px-4 py-5 font-bold text-slate-700">{{ ds.name }}</td>
-                        <td v-for="m in metrics" :key="m" class="px-1 py-5 text-center">
-                            <div class="font-mono text-slate-900 font-semibold">{{ formatVal(ds.values[m]) }}</div>
-                            <!-- 差值计算 -->
-                            <div v-if="ds.values[m] !== undefined" :class="getDeltaStyle(m, ds.values[m])" class="delta">
-                                {{ (ds.values[m] - activeBenchmark[m]) >= 0 ? '+' : '' }}{{ (ds.values[m] - activeBenchmark[m]).toFixed(4) }}
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+        <!-- 表格容器 -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 transition-all">
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead class="bg-slate-800 text-white">
+                        <tr>
+                            <th class="px-4 py-4 w-12"></th>
+                            <th class="px-2 py-4 font-bold text-center w-12 italic opacity-50">Rank</th>
+                            <th class="px-4 py-4 font-bold text-left min-w-[180px]">Test Datasets</th>
+                            <th v-for="m in metrics" :key="m" class="px-2 py-4 font-bold text-center uppercase text-[10px] tracking-widest">{{ m }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        <!-- 基准参考行 -->
+                        <tr class="bg-amber-50/40">
+                            <td></td>
+                            <td class="px-2 py-3 text-center">🏆</td>
+                            <td class="px-4 py-3">
+                                <div class="font-bold text-amber-900 leading-none">{{ selectedBenchmarkName === 'Best' ? 'Combined Best Metrics' : selectedBenchmarkName }}</div>
+                                <div class="text-[9px] text-amber-600 uppercase font-black mt-1">Benchmark Baseline</div>
+                            </td>
+                            <td v-for="m in metrics" :key="m" class="px-2 py-3 text-center font-mono font-bold text-slate-600 bg-amber-100/30">
+                                {{ formatVal(activeBenchmark[m]) }}
+                            </td>
+                        </tr>
+
+                        <!-- 数据集动态行 -->
+                        <tr v-for="(ds, idx) in processedResults" :key="ds.name" 
+                            :class="[isDsSelected(ds.name) ? 'winner-bg shadow-inner' : 'hover:bg-slate-50', 'transition-all duration-300']">
+                            
+                            <!-- 复选框 -->
+                            <td class="px-4 py-5 text-center">
+                                <input type="checkbox" :value="ds" v-model="selectedCompare" :disabled="selectedCompare.length >= 2 && !isDsSelected(ds.name)"
+                                       class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 transition-all cursor-pointer">
+                            </td>
+
+                            <td class="px-2 py-5 text-center font-bold text-slate-300">#{{ idx + 1 }}</td>
+                            
+                            <td class="px-4 py-5 font-bold">
+                                <div :class="isDsSelected(ds.name) ? 'text-indigo-700' : 'text-slate-700'">{{ ds.name }}</div>
+                            </td>
+
+                            <!-- 核心指标数据 -->
+                            <td v-for="m in metrics" :key="m" class="px-1 py-5 text-center relative group">
+                                <div class="flex flex-col items-center">
+                                    <div :class="[
+                                            'font-mono font-semibold transition-all',
+                                            isDsSelected(ds.name) ? 'text-sm' : 'text-slate-900',
+                                            isH2HWinner(ds, m) ? 'text-indigo-600 scale-110 font-black' : ''
+                                        ]">
+                                        {{ formatVal(ds.values[m]) }}
+                                        <span v-if="isH2HWinner(ds, m)" class="winner-crown text-[10px] ml-0.5">👑</span>
+                                    </div>
+
+                                    <!-- 第一层：对比 Benchmark 的差值 -->
+                                    <div v-if="ds.values[m] !== undefined" :class="getDeltaStyle(m, ds.values[m])" class="delta">
+                                        {{ (ds.values[m] - activeBenchmark[m]) >= 0 ? '+' : '' }}{{ (ds.values[m] - activeBenchmark[m]).toFixed(4) }}
+                                    </div>
+
+                                    <!-- 第二层：对比 PK 对象的差值 (仅在选中两个时显示) -->
+                                    <div v-if="selectedCompare.length === 2 && isDsSelected(ds.name)" class="vs-delta mt-0.5">
+                                        {{ getH2HDiff(ds, m) }}
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -92,29 +158,30 @@
         createApp({
             data() {
                 return {
-                    selectedPhase: 'P',
-                    selectedThreshold: 0.10,
-                    selectedBenchmarkName: 'Best',
+                    selectedPhase: 'S',
+                    selectedThreshold: 0.25,
+                    selectedBenchmarkName: 'PhaseNet(SeisBench)-STEAD',
                     metrics: ['Precision', 'Recall', 'F1', 'mu', 'sigma', 'MAE', 'RMSE', 'R2', 'IoU'],
                     thresholds: [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95],
                     datasetConfigs: [
                         { name: 'ETHZ Dataset', url: './data/ethz.json' },
-			{ name: 'ETHZP Dataset', url: './data/ethzp.json' },
+                        { name: 'ETHZP Dataset', url: './data/ethzp.json' },
                         { name: 'PNW Dataset', url: './data/pnw.json' },
-			{ name: 'PNWP Dataset', url: './data/pnwp.json' },
+                        { name: 'PNWP Dataset', url: './data/pnwp.json' },
                         { name: 'SCEDC Dataset', url: './data/scedc.json' },
                         { name: 'CEEDNC Dataset', url: './data/ceednc.json' },
                         { name: 'CEEDNCP Dataset', url: './data/ceedncp.json' },
-			{ name: 'CEEDSC Dataset', url: './data/ceedsc.json' }
+                        { name: 'CEEDSC Dataset', url: './data/ceedsc.json' }
                     ],
                     benchmarkStore: {},
-                    allData: [] 
+                    allData: [],
+                    selectedCompare: [] // 存放选中的待对比数据集
                 }
             },
             computed: {
+                // 计算当前选中的 Benchmark
                 activeBenchmark() {
                     const phase = this.selectedPhase;
-                    // 如果还没加载好数据，返回默认全0对象
                     if (Object.keys(this.benchmarkStore).length === 0) {
                         return this.metrics.reduce((a, m) => ({...a, [m]: 0}), {});
                     }
@@ -125,23 +192,11 @@
 
                     const best = {};
                     const lowerIsBetter = ['mu', 'sigma', 'MAE', 'RMSE'];
-                    
                     this.metrics.forEach(m => {
-                        const values = Object.values(this.benchmarkStore)
-                                             .map(model => model[phase]?.[m])
-                                             .filter(v => v !== undefined);
-                        
-                        if (values.length === 0) {
-                            best[m] = 0;
-                            return;
-                        }
-
+                        const values = Object.values(this.benchmarkStore).map(model => model[phase]?.[m]).filter(v => v !== undefined);
+                        if (values.length === 0) { best[m] = 0; return; }
                         if (lowerIsBetter.includes(m)) {
-                            if (m === 'mu') {
-                                best[m] = values.reduce((prev, curr) => Math.abs(curr) < Math.abs(prev) ? curr : prev);
-                            } else {
-                                best[m] = Math.min(...values);
-                            }
+                            best[m] = (m === 'mu') ? values.reduce((p, c) => Math.abs(c) < Math.abs(p) ? c : p) : Math.min(...values);
                         } else {
                             best[m] = Math.max(...values);
                         }
@@ -149,6 +204,7 @@
                     return best;
                 },
 
+                // 根据 Filter 过滤后的结果集
                 processedResults() {
                     return this.allData.map(ds => {
                         const row = ds.content.find(d => 
@@ -174,18 +230,61 @@
                         console.error("Data loading error:", e);
                     }
                 },
+
+                // UI 辅助函数
+                isDsSelected(name) {
+                    return this.selectedCompare.some(item => item.name === name);
+                },
+
+                // PK 逻辑：判断是否在选中的两个中胜出
+                isH2HWinner(currentDs, metric) {
+                    if (this.selectedCompare.length !== 2 || !this.isDsSelected(currentDs.name)) return false;
+                    
+                    const otherDs = this.selectedCompare.find(i => i.name !== currentDs.name);
+                    const v1 = currentDs.values[metric];
+                    const v2 = otherDs.values[metric];
+                    if (v1 === undefined || v2 === undefined) return false;
+
+                    const lowerIsBetter = ['mu', 'sigma', 'MAE', 'RMSE'];
+                    if (lowerIsBetter.includes(metric)) {
+                        return (metric === 'mu') ? Math.abs(v1) < Math.abs(v2) : v1 < v2;
+                    }
+                    return v1 > v2;
+                },
+
+                // 计算两个选中项之间的差值文字
+                getH2HDiff(currentDs, metric) {
+                    if (this.selectedCompare.length !== 2) return "";
+                    const otherDs = this.selectedCompare.find(i => i.name !== currentDs.name);
+                    const diff = currentDs.values[metric] - otherDs.values[metric];
+                    if (isNaN(diff)) return "";
+                    return `${diff >= 0 ? '↑' : '↓'} ${Math.abs(diff).toFixed(4)}`;
+                },
+
+                // 结论文字
+                getWinnerConclusion() {
+                    if (this.selectedCompare.length !== 2) return "";
+                    let winsA = 0;
+                    this.metrics.forEach(m => { if (this.isH2HWinner(this.selectedCompare[0], m)) winsA++; });
+                    const winsB = this.metrics.length - winsA;
+                    
+                    if (winsA > winsB) return `${this.selectedCompare[0].name} leads by ${winsA} metrics`;
+                    if (winsB > winsA) return `${this.selectedCompare[1].name} leads by ${winsB} metrics`;
+                    return "Models are perfectly balanced";
+                },
+
                 getDeltaStyle(metric, value) {
                     const bench = this.activeBenchmark[metric];
                     if (bench === undefined) return '';
                     const diff = value - bench;
                     const lowerIsBetter = ['mu', 'sigma', 'MAE', 'RMSE'];
-                    
                     if (lowerIsBetter.includes(metric)) {
                         if (metric === 'mu') return Math.abs(value) <= Math.abs(bench) ? 'up-good' : 'up-bad';
                         return diff <= 0 ? 'up-good' : 'up-bad';
                     }
                     return diff >= 0 ? 'up-good' : 'up-bad';
                 },
+
                 formatVal(val) {
                     return (val !== undefined && val !== null) ? val.toFixed(4) : '-';
                 }
